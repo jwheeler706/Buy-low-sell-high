@@ -33,9 +33,9 @@ class Portfolio:
         self.stocks[symbol] = stock
         self.shares[symbol] = 0
         
-    def addTransaction(self, date, action, symbol, shares, amount):
+    def addTransaction(self, date, action, symbol, shares, dollars):
         '''Add a record of the transaction to your portfolio.'''
-        self.transactions[self.numTransactions] = {'date':date, 'action':action, 'symbol':symbol, 'shares':shares, 'dollars':amount, 'capital':self.capital}
+        self.transactions[self.numTransactions] = {'date':date, 'action':action, 'symbol':symbol, '\u0394shares':shares, '\u0394dollars':dollars, 'capital':self.capital}
         self.numTransactions += 1
     
     def transactionDF(self):
@@ -53,6 +53,11 @@ class Portfolio:
         isDate - boolean to determine what the index value is: 1 for row index, 0 for date/timestamp
         '''
         
+        #check is there is available capital
+        if self.capital <= 0:
+            print("You have no money left...")
+            return
+        
         #add the stock to the portfolio if it doesn't exist
         if symbol not in self.shares.keys():
             self.add(symbol) 
@@ -67,7 +72,7 @@ class Portfolio:
         #set variables appropriately if buying number of shares
         if isShares: 
             numShares = amount
-            dollars = amount*price            
+            dollars = amount*price
             #if you can't buy that much, buy as much as you can
             if dollars > self.capital: 
                 print('Oh no, you didn\'t have enough money to buy that many stocks. Buying what you can instead, broke boi.')
@@ -93,16 +98,16 @@ class Portfolio:
         print('{:.2f} shares were purchased for ${:.2f}'.format(numShares, dollars))
         
         #log transaction
-        self.addTransaction(index, 'buy', symbol, numShares, dollars)
+        self.addTransaction(index, 'buy', symbol, numShares, -dollars)
 
-    def sell(self, symbol, amount, index, isShares = 1, isDate = 0):
+    def sell(self, symbol, amount = 0, index = -1, isShares = 1, isDate = 0):
         '''Sell some stock! Specify the index/date and share/dollar amount.
         
         Inputs:
         --------
         symbol - ticker symbol of the company whose stock you want to sell
-        amount - how much of the stock you want to sell; can be shares or dollars, determined by the value of shares
-        index - either dataframe row or date/timestamp; the code will interpret the value as a row index unless date is set to 1
+        index - either dataframe row or date/timestamp; the code will interpret the value as a row index unless date is set to 1; will default to last row in dataset
+        amount - how much of the stock you want to sell; can be shares or dollars, determined by the value of shares; if left blank, all shares are sold
         isShares - boolean to determine what the amount value is: 1 for shares, 0 for dollars
         isDate - boolean to determine what the index value is: 1 for row index, 0 for date/timestamp
         '''
@@ -121,9 +126,13 @@ class Portfolio:
         
         #set variables appropriately if selling shares
         if isShares:
-            #sell all shares if amount entered is more than amount owned
-            if amount > self.shares[symbol]:
-                print('Oh no, you don\'t that many shares to sell. Selling them all.')
+            #sell all shares if no amount is entered or if the value is more than amount owned
+            if amount == 0:
+                print('No value entered, all shares will be sold')
+                numShares = self.shares[symbol]
+                dollars = numShares*price  
+            elif amount > self.shares[symbol]:
+                print('Oh no, you don\'t have that many shares to sell. Selling them all.')
                 numShares = self.shares[symbol]
             else:
                 numShares = amount
@@ -131,11 +140,16 @@ class Portfolio:
         
         #set variables appropriately if selling dollar amount
         else:
-            #sell all shares if amount entered is more than shares are worth
-            if amount > self.shares[symbol]*price:
+            #sell all shares if no amount is entered or the value is more than shares are worth
+            if amount == 0:
+                print('No value entered, all shares will be sold')
+                numShares = self.shares[symbol]
+                dollars = numShares*price                
+            elif amount > self.shares[symbol]*price:
                 print('Cheesum crepes, you don\'t have that much worth of that stock. Selling all instead.')
                 numShares = self.shares[symbol]
                 dollars = numShares*price
+                
             else: 
                 numShares = amount/price
                 dollars = amount
@@ -149,7 +163,7 @@ class Portfolio:
         print('{:.2f} shares were sold for ${:.2f}'.format(numShares, dollars))
         
         #log transaction
-        self.addTransaction(index, 'sell', symbol, numShares, dollars)
+        self.addTransaction(index, 'sell', symbol, -numShares, dollars)
         
         
 
@@ -194,7 +208,7 @@ class Stock:
         '''Return the trade volume for a given index.'''
         return self.intra['5. volume'][index]
     
-    def percentChange(self, index1, index2, isDate = 0, isDaily = 0, kind = 'buy'):
+    def percentChange(self, index1, index2, kind = 'buy', isDate = 0, isDaily = 0):
         '''Calculate the percent change of a variable. 
         
         (index1-index2)/index2*100
@@ -203,9 +217,9 @@ class Stock:
         --------
         index1 - the first index, should be more recent than index2
         index2 - the second index, should be older than index1
+        kind - the variable that you want to calculate the percent change of
         isDate - boolean to determine what the index value is: 1 for row index, 0 for date/timestamp
         isDaily - boolean to determine interval for percent change: 1 for daily change, 2 for intradaily change
-        kind - the variable that you want to calculate the percent change of
         
         Returns:
         ---------
