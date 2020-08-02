@@ -9,6 +9,7 @@ def indexToDate(index, frame):
     --------
     index - the row index
     frame - the dataframe with the data'''
+    
     return str(frame.iloc[index].name)
 
 class Portfolio:
@@ -23,7 +24,7 @@ class Portfolio:
         self.stocks = {}
         self.shares = {}
         self.numTransactions = 0
-        self.transactions = {}
+        self.ledger = {}
         
     def add(self, symbol):
         '''Add a stock with the given symbol to your portfolio.'''
@@ -35,11 +36,11 @@ class Portfolio:
         
     def addTransaction(self, date, action, symbol, shares, dollars):
         '''Add a record of the transaction to your portfolio.'''
-        self.transactions[self.numTransactions] = {'date':date, 'action':action, 'symbol':symbol, '\u0394shares':shares, '\u0394dollars':dollars, 'capital':self.capital}
+        self.ledger[self.numTransactions] = {'date':date, 'action':action, 'symbol':symbol, '\u0394shares':shares, '\u0394dollars':dollars, 'capital':self.capital}
         self.numTransactions += 1
     
-    def transactionDF(self):
-        return pd.DataFrame.from_dict(self.transactions, orient='index')
+    def getLedger(self):
+        return pd.DataFrame.from_dict(self.ledger, orient='index').round(2)
     
     def buy(self, symbol, amount, index = 0, isShares = 1, isDate = 0):
         '''Buy some stock! Specify the index/date and share/dollar amount.
@@ -75,7 +76,7 @@ class Portfolio:
             dollars = amount*price
             #if you can't buy that much, buy as much as you can
             if dollars > self.capital: 
-                print('Oh no, you didn\'t have enough money to buy that many stocks. Buying what you can instead, broke boi.')
+                print('Oh no, you don\'t have enough money to buy that many stocks. Buying what you can instead, broke boi.')
                 numShares = self.capital/price
                 dollars = self.capital
         
@@ -95,12 +96,16 @@ class Portfolio:
         
         self.shares[symbol] += numShares
         self.capital -= dollars
-        print('{:.2f} shares were purchased for ${:.2f}'.format(numShares, dollars))
+        print('{} shares were purchased for ${}'.format(numShares, dollars))
+        
+        #clean up variables
+        if self.capital != 0 and 1/self.capital > 1000:
+            self.capital = 0
         
         #log transaction
         self.addTransaction(index, 'buy', symbol, numShares, -dollars)
 
-    def sell(self, symbol, amount = 0, index = -1, isShares = 1, isDate = 0):
+    def sell(self, symbol, amount = 0, index = -2, isShares = 1, isDate = 0):
         '''Sell some stock! Specify the index/date and share/dollar amount.
         
         Inputs:
@@ -160,7 +165,7 @@ class Portfolio:
         
         self.shares[symbol] -= numShares
         self.capital += dollars
-        print('{:.2f} shares were sold for ${:.2f}'.format(numShares, dollars))
+        print('{} shares were sold for ${}'.format(numShares, dollars))
         
         #log transaction
         self.addTransaction(index, 'sell', symbol, -numShares, dollars)
@@ -196,16 +201,55 @@ class Stock:
         outputsize - determines how much data is retrieved: "compact" gets the last 100 datapoints, "full" gets all available data''' 
         self.intra, self.intra_meta = self.timeSeries.get_intraday(self.symbol, interval, outputsize)
         
-    def buyPrice(self, index):
-        '''Return the buy price, determined by the open value for a given index.'''
+    def buyPrice(self, index, isDate = 1):
+        '''Return the buy price, determined by the next open value for a given index.
+        
+        Inputs:
+        --------
+        index - either row index or date/timestamp
+        isDate - 1 if index is date, 0 if row index'''
+        
+        #switch date to row index to increment
+        if isDate:
+            index = np.where(self.intra.index == index)[0].tolist()[0]
+            
+        #get date of next index
+        index = indexToDate(index+1, self.intra)
+        
+        #return open value for next index
         return self.intra['1. open'][index]
     
-    def sellPrice(self, index):
-        '''Return the sell price, determined by the open value for a given index.'''
-        return self.intra['4. close'][index]
+    def sellPrice(self, index, isDate = 1):
+        '''Return the sell price, determined by the next open value for a given index.  
+        
+        Inputs:
+        --------
+        index - either row index or date/timestamp
+        isDate - 1 if index is date, 0 if row index'''
+        
+        #switch date to row index to increment
+        if isDate:
+            index = np.where(self.intra.index == index)[0].tolist()[0]
+            
+        #get date of next index
+        index = indexToDate(index+1, self.intra)
+        
+        #return open value for next index
+        return self.intra['1. open'][index]
     
-    def volume(self, index):
-        '''Return the trade volume for a given index.'''
+    def volume(self, index, isDate = 1):
+        '''Return the trade volume for a given index.
+                
+        Inputs:
+        --------
+        index - either row index or date/timestamp
+        isDate - 1 if index is date, 0 if row index'''
+        
+        #switch row index to date
+        if not isDate:
+            index = indexToDate(index, self.intra)
+            
+        #reutrn volume value for given index
         return self.intra['5. volume'][index]
     
     def percentChange(self, index1, index2, kind = 'buy', isDate = 0, isDaily = 0):
@@ -218,7 +262,7 @@ class Stock:
         index1 - the first index, should be more recent than index2
         index2 - the second index, should be older than index1
         kind - the variable that you want to calculate the percent change of
-        isDate - boolean to determine what the index value is: 1 for row index, 0 for date/timestamp
+        isDate - boolean to determine what the index value is: 1 for date/timestamp, 0 for row index
         isDaily - boolean to determine interval for percent change: 1 for daily change, 2 for intradaily change
         
         Returns:
