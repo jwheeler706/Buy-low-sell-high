@@ -3,11 +3,22 @@ import pandas as pd
 from alpha_vantage.timeseries import TimeSeries
 
 def indexToDate(index, frame):
+    '''Helper function to translate a row index to the corresponding date/timestamp
+    
+    Inputs:
+    --------
+    index - the row index
+    frame - the dataframe with the data'''
     return str(frame.iloc[index].name)
 
 class Portfolio:
+    '''Create a portfolio with the amount of specified capital.'''
     def __init__(self, capital):
-        '''Initializer. Create a portfolio with the amount of specified capital.'''
+        '''Initializer. 
+        
+        Inputs:
+        --------
+        capital - how much money you want to start out with'''
         self.capital = capital
         self.stocks = {}
         self.shares = {}
@@ -24,19 +35,22 @@ class Portfolio:
         
     def addTransaction(self, date, action, symbol, shares, amount):
         '''Add a record of the transaction to your portfolio.'''
-        self.transactions[self.numTransactions] = {'date':date, 'action':action, 'symbol':symbol, 'shares':shares, 'dollars':amount}
+        self.transactions[self.numTransactions] = {'date':date, 'action':action, 'symbol':symbol, 'shares':shares, 'dollars':amount, 'capital':self.capital}
         self.numTransactions += 1
     
-    def buy(self, symbol, amount, index = 0, shares = 1, date = 0):
-        '''Buy some stock!
+    def transactionDF(self):
+        return pd.DataFrame.from_dict(self.transactions, orient='index')
+    
+    def buy(self, symbol, amount, index = 0, isShares = 1, isDate = 0):
+        '''Buy some stock! Specify the index/date and share/dollar amount.
         
         Inputs:
         --------
         symbol - ticker symbol of the company whose stock you want to buy
-        amount - how much of the stock you want to buy; can be shares or dollars, determined by the value of shares
+        amount - how much of the stock you want to buy; can be shares or dollars, determined by the value of isShares
         index - either dataframe row or date/timestamp; the code will interpret the value as a row index unless date is set to 1
-        shares - boolean to determine what the amount value is: 1 for shares, 0 for dollars
-        date - boolean to determine what the index value is: 1 for row index, 0 for date/timestamp
+        isShares - boolean to determine what the amount value is: 1 for shares, 0 for dollars
+        isDate - boolean to determine what the index value is: 1 for row index, 0 for date/timestamp
         '''
         
         #add the stock to the portfolio if it doesn't exist
@@ -44,14 +58,14 @@ class Portfolio:
             self.add(symbol) 
             
         #reformat index, if necessary
-        if not date:
+        if not isDate:
             index = indexToDate(index, self.stocks[symbol].intra) 
         
         #get buying price
         price = self.stocks[symbol].buyPrice(index)
         
         #set variables appropriately if buying number of shares
-        if shares: 
+        if isShares: 
             numShares = amount
             dollars = amount*price            
             #if you can't buy that much, buy as much as you can
@@ -71,6 +85,9 @@ class Portfolio:
             dollars = amount
         
         #update portfolio variables and output the details of the transaction
+        numShares = round(numShares,2)
+        dollars = round(dollars,2)
+        
         self.shares[symbol] += numShares
         self.capital -= dollars
         print('{:.2f} shares were purchased for ${:.2f}'.format(numShares, dollars))
@@ -78,16 +95,16 @@ class Portfolio:
         #log transaction
         self.addTransaction(index, 'buy', symbol, numShares, dollars)
 
-    def sell(self, symbol, amount, index, shares = 1, date = 0):
-        '''Sell some stock!
+    def sell(self, symbol, amount, index, isShares = 1, isDate = 0):
+        '''Sell some stock! Specify the index/date and share/dollar amount.
         
         Inputs:
         --------
         symbol - ticker symbol of the company whose stock you want to sell
         amount - how much of the stock you want to sell; can be shares or dollars, determined by the value of shares
         index - either dataframe row or date/timestamp; the code will interpret the value as a row index unless date is set to 1
-        shares - boolean to determine what the amount value is: 1 for shares, 0 for dollars
-        date - boolean to determine what the index value is: 1 for row index, 0 for date/timestamp
+        isShares - boolean to determine what the amount value is: 1 for shares, 0 for dollars
+        isDate - boolean to determine what the index value is: 1 for row index, 0 for date/timestamp
         '''
         
         #ridicule the user if they try to sell stock they don't own
@@ -96,14 +113,14 @@ class Portfolio:
             return
         
         #reformat index, if necessary
-        if not date:
+        if not isDate:
             index = indexToDate(index, self.stocks[symbol].intra)
             
         #get selling price
         price = self.stocks[symbol].sellPrice(index)
         
         #set variables appropriately if selling shares
-        if shares:
+        if isShares:
             #sell all shares if amount entered is more than amount owned
             if amount > self.shares[symbol]:
                 print('Oh no, you don\'t that many shares to sell. Selling them all.')
@@ -124,6 +141,9 @@ class Portfolio:
                 dollars = amount
         
         #update portfolio variables and output the details of the transaction
+        numShares = round(numShares,2)
+        dollars = round(dollars,2)
+        
         self.shares[symbol] -= numShares
         self.capital += dollars
         print('{:.2f} shares were sold for ${:.2f}'.format(numShares, dollars))
@@ -134,8 +154,13 @@ class Portfolio:
         
 
 class Stock:
+    '''Create Stock object for company with given symbol.'''
     def __init__(self, symbol):
-        '''Initializer. Create Stock object for company with given symbol.'''
+        '''Initializer. 
+        
+        Inputs:
+        --------
+        symbol - the ticker symbol for the company'''
         self.symbol = symbol
         self.key = 'PTI4HP742CC950TQ'
         self.timeSeries = TimeSeries(self.key, output_format='pandas')
@@ -169,7 +194,7 @@ class Stock:
         '''Return the trade volume for a given index.'''
         return self.intra['5. volume'][index]
     
-    def percentChange(self, index1, index2, date = 0, daily = 0, kind = 'buy'):
+    def percentChange(self, index1, index2, isDate = 0, isDaily = 0, kind = 'buy'):
         '''Calculate the percent change of a variable. 
         
         (index1-index2)/index2*100
@@ -178,8 +203,8 @@ class Stock:
         --------
         index1 - the first index, should be more recent than index2
         index2 - the second index, should be older than index1
-        date - boolean to determine what the index value is: 1 for row index, 0 for date/timestamp
-        daily - boolean to determine interval for percent change: 1 for daily change, 2 for intradaily change
+        isDate - boolean to determine what the index value is: 1 for row index, 0 for date/timestamp
+        isDaily - boolean to determine interval for percent change: 1 for daily change, 2 for intradaily change
         kind - the variable that you want to calculate the percent change of
         
         Returns:
@@ -188,8 +213,8 @@ class Stock:
         '''
         
         #reformat indicies, if necessary
-        if not date:
-            if daily:
+        if not isDate:
+            if isDaily:
                 index1 = indexToDate(index1, self.daily)
                 index2 = indexToDate(index2, self.daily)
             else:
