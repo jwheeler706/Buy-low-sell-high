@@ -2,15 +2,16 @@ import numpy as np
 import pandas as pd
 from alpha_vantage.timeseries import TimeSeries
 
-def indexToDate(index, frame):
+def indexToDate(index, frame, isDaily = 0):
     '''Helper function to translate a row index to the corresponding date/timestamp
     
     Inputs:
     --------
     index - the row index
     frame - the dataframe with the data'''
-    
-    return str(frame.iloc[index].name)
+
+    if isDaily: return str(frame.iloc[index].name)[0:10]
+    else: return str(frame.iloc[index].name)
 
 class Portfolio:
     '''Create a portfolio with the amount of specified capital.'''
@@ -26,18 +27,13 @@ class Portfolio:
         self.numTransactions = 0
         self.ledger = {}
         
-    def add(self, symbol):
+    def add(self, symbol, isDaily = 1):
         '''Add a stock with the given symbol to your portfolio.'''
         stock = Stock(symbol)
-        stock.gatherDaily()
-        stock.gatherIntra()
+        if isDaily: stock.gatherDaily()
+        else: stock.gatherIntra()
         self.stocks[symbol] = stock
         self.shares[symbol] = 0
-        
-    def addCapital(self, capital):
-        '''Add capital to a portfolio'''
-        self.capital += capital
-        
         
     def addTransaction(self, date, action, symbol, shares, dollars):
         '''Add a record of the transaction to your portfolio.'''
@@ -57,7 +53,6 @@ class Portfolio:
         index - either dataframe row or date/timestamp; the code will interpret the value as a row index unless date is set to 1
         isShares - boolean to determine what the amount value is: 1 for shares, 0 for dollars
         isDate - boolean to determine what the index value is: 1 for row index, 0 for date/timestamp
-        isDaily - boolean to determine whether to use the daily or intradaily dataframes
         '''
         
         #check is there is available capital
@@ -67,20 +62,15 @@ class Portfolio:
         
         #add the stock to the portfolio if it doesn't exist
         if symbol not in self.shares.keys():
-            self.add(symbol) 
+            self.add(symbol, isDaily) 
         
-        #get the appropriate dataframe
-        if isDaily:
-            df = self.stocks[symbol].daily
-        else:
-            df = self.stocks[symbol].intra
-         
         #reformat index, if necessary
         if not isDate:
-            index = indexToDate(index, df) 
+            if isDaily: index = indexToDate(index, self.stocks[symbol].daily, isDaily) 
+            else: index = indexToDate(index, self.stocks[symbol].intra, isDaily) 
         
         #get buying price
-        price = self.stocks[symbol].buyPrice(index, isDaily=isDaily)
+        price = self.stocks[symbol].buyPrice(index, isDaily, 1)
         
         #set variables appropriately if buying number of shares
         if isShares: 
@@ -127,7 +117,6 @@ class Portfolio:
         amount - how much of the stock you want to sell; can be shares or dollars, determined by the value of shares; if left blank, all shares are sold
         isShares - boolean to determine what the amount value is: 1 for shares, 0 for dollars
         isDate - boolean to determine what the index value is: 1 for row index, 0 for date/timestamp
-        isDaily - boolean to determine whether to use the daily or intradaily dataframes
         '''
         
         #ridicule the user if they try to sell stock they don't own
@@ -135,18 +124,13 @@ class Portfolio:
             print('You don\'t own any of that stock, dumbass')
             return
         
-        #get the appropriate dataframe
-        if isDaily:
-            df = self.stocks[symbol].daily
-        else:
-            df = self.stocks[symbol].intra
-        
         #reformat index, if necessary
         if not isDate:
-            index = indexToDate(index, df)
-        
+            if isDaily: index = indexToDate(index, self.stocks[symbol].daily, isDaily) 
+            else: index = indexToDate(index, self.stocks[symbol].intra, isDaily) 
+            
         #get selling price
-        price = self.stocks[symbol].sellPrice(index, isDaily=isDaily)
+        price = self.stocks[symbol].sellPrice(index, isDaily, 1)
         
         #set variables appropriately if selling shares
         if isShares:
@@ -220,7 +204,7 @@ class Stock:
         outputsize - determines how much data is retrieved: "compact" gets the last 100 datapoints, "full" gets all available data''' 
         self.intra, self.intra_meta = self.timeSeries.get_intraday(self.symbol, interval, outputsize)
         
-    def buyPrice(self, index, isDate = 1, isDaily = 0):
+    def buyPrice(self, index, isDaily = 0, isDate = 1):
         '''Return the buy price, determined by the next open value for a given index.
         
         Inputs:
@@ -228,23 +212,20 @@ class Stock:
         index - either row index or date/timestamp
         isDate - 1 if index is date, 0 if row index'''
         
-        #get the appropriate dataframe
-        if isDaily:
-            df = self.daily
-        else:
-            df = self.intra
-        
         #switch date to row index to increment
         if isDate:
-            index = np.where(df.index == index)[0].tolist()[0]
-        
+            if isDaily: index = np.where(self.daily.index == index)[0].tolist()[0]
+            else: index = np.where(self.intra.index == index)[0].tolist()[0]
+            
         #get date of next index
-        index = indexToDate(index+1, df)
+        if isDaily: index = indexToDate(index+1, self.daily, isDaily)
+        else: index = indexToDate(index+1, self.intra, isDaily)
         
         #return open value for next index
-        return df['1. open'][index]
+        if isDaily: return self.daily['1. open'][index]
+        else: return self.intra['1. open'][index]
     
-    def sellPrice(self, index, isDate = 1, isDaily = 0):
+    def sellPrice(self, index, isDaily = 0, isDate = 1):
         '''Return the sell price, determined by the next open value for a given index.  
         
         Inputs:
@@ -252,43 +233,35 @@ class Stock:
         index - either row index or date/timestamp
         isDate - 1 if index is date, 0 if row index'''
         
-        #get the appropriate dataframe
-        if isDaily:
-            df = self.daily
-        else:
-            df = self.intra
-        
         #switch date to row index to increment
         if isDate:
-            index = np.where(df.index == index)[0].tolist()[0]
+            if isDaily: index = np.where(self.daily.index == index)[0].tolist()[0]
+            else: index = np.where(self.intra.index == index)[0].tolist()[0]
             
         #get date of next index
-        index = indexToDate(index+1, df)
+        if isDaily: index = indexToDate(index+1, self.daily, isDaily)
+        else: index = indexToDate(index+1, self.intra, isDaily)
         
         #return open value for next index
-        return df['1. open'][index]
+        if isDaily: return self.daily['1. open'][index]
+        else: return self.intra['1. open'][index]
     
-    def volume(self, index, isDate = 1, isDaily = 0):
+    def volume(self, index, isDaily = 0, isDate = 1):
         '''Return the trade volume for a given index.
                 
         Inputs:
         --------
         index - either row index or date/timestamp
-        isDate - 1 if index is date, 0 if row index
-        isDaily - 1 if daily data, 0 if intradaily'''
-        
-        #get the appropriate dataframe
-        if isDaily:
-            df = self.daily
-        else:
-            df = self.intra
+        isDate - 1 if index is date, 0 if row index'''
         
         #switch row index to date
         if not isDate:
-            index = indexToDate(index, df)
+            if isDaily: index = indexToDate(index, self.daily, isDaily)
+            else: indexToDate(index, self.intra, isDaily)
             
         #reutrn volume value for given index
-        return df['5. volume'][index]
+        if isDaily: return self.daily['5. volume'][index]
+        else: return self.intra['5. volume'][index]
     
     def percentChange(self, index1, index2, kind = 'buy', isDate = 0, isDaily = 0):
         '''Calculate the percent change of a variable. 
@@ -311,16 +284,16 @@ class Stock:
         #reformat indicies, if necessary
         if not isDate:
             if isDaily:
-                index1 = indexToDate(index1, self.daily)
-                index2 = indexToDate(index2, self.daily)
+                index1 = indexToDate(index1, self.daily, isDaily)
+                index2 = indexToDate(index2, self.daily, isDaily)
             else:
-                index1 = indexToDate(index1, self.intra)
-                index2 = indexToDate(index2, self.intra)
+                index1 = indexToDate(index1, self.intra, isDaily)
+                index2 = indexToDate(index2, self.intra, isDaily)
                 
         #return percent change for supported variables
-        if kind == 'sell': return (self.sellPrice(index1)-self.sellPrice(index2))/self.sellPrice(index2)*100
-        if kind == 'buy': return (self.buyPrice(index1)-self.buyPrice(index2))/self.buyPrice(index2)*100
-        if kind == 'volume': return (self.volume(index1)-self.volume(index2))/self.volume(index2)*100
+        if kind == 'sell': return (self.sellPrice(index1,isDaily)-self.sellPrice(index2,isDaily))/self.sellPrice(index2,isDaily)*100
+        if kind == 'buy': return (self.buyPrice(index1, isDaily)-self.buyPrice(index2, isDaily))/self.buyPrice(index2, isDaily)*100
+        if kind == 'volume': return (self.volume(index1, isDaily)-self.volume(index2, isDaily))/self.volume(index2, isDaily)*100
         
         #let the user know if they entered a bad variable
         else:
